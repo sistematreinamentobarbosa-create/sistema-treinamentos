@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-from datetime import datetime, timedelta
+from datetime import datetime
 import plotly.express as px
 import ast
 import locale
@@ -20,7 +20,6 @@ except:
 # --- 1. CONFIGURAÇÃO E CONEXÃO ---
 st.set_page_config(page_title="Barbosa Contabilidade | Treinamentos", layout="wide")
 
-# Inicializa conexão com Google Sheets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def carregar_dados():
@@ -108,12 +107,11 @@ else:
         section[data-testid="stSidebar"] { background-color: rgba(0, 0, 0, 0.8) !important; border-right: 1px solid #4a0000; }
         .main-title-logged { font-family: sans-serif; font-size: 30px; font-weight: 800; color: white; text-transform: uppercase; margin-bottom: 20px; }
         div[data-testid="stMetricValue"] { padding: 20px !important; border-radius: 15px !important; color: white !important; font-weight: bold !important; }
-        .edit-container { background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; border: 1px solid #ff4b4b; }
-        .metric-card { background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; text-align: center; border-bottom: 4px solid #ff4b4b; transition: transform 0.3s; }
-        .metric-card:hover { transform: translateY(-5px); background-color: rgba(255, 255, 255, 0.1); }
+        .edit-container { background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; border: 1px solid #ff4b4b; margin-top: 10px; }
+        .metric-card { background-color: rgba(255, 255, 255, 0.05); padding: 20px; border-radius: 15px; text-align: center; border-bottom: 4px solid #ff4b4b; transition: transform 0.3s; margin-bottom: 10px;}
         .metric-label { color: #aaaaaa; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
         .metric-value { color: white; font-size: 28px; font-weight: 800; }
-        .inactive-alert { border-left: 5px solid #ff4b4b; background-color: rgba(255, 75, 75, 0.1); padding: 15px; border-radius: 5px; margin-bottom: 10px; }
+        .inactive-alert { border-left: 5px solid #ff4b4b; background-color: rgba(255, 75, 75, 0.1); padding: 15px; border-radius: 5px; margin-bottom: 10px; font-size: 14px; }
         </style>
     """, unsafe_allow_html=True)
     
@@ -125,7 +123,6 @@ else:
     menu = st.sidebar.selectbox("Menu", opcoes_menu)
     st.sidebar.divider()
     st.sidebar.write(f"👤 **{st.session_state.usuario}**")
-    st.sidebar.write(f"🏷️ Perfis: **{', '.join(st.session_state.perfil)}**")
     st.sidebar.write(f"🏢 Setor: **{st.session_state.setor_usuario}**")
 
     # --- ALTERAR SENHA (NA SIDEBAR) ---
@@ -145,6 +142,7 @@ else:
     if menu == "Dashboard":
         mes_sel = st.sidebar.selectbox("Mês", LISTA_MESES, index=datetime.now().month-1)
         ano_sel = st.sidebar.number_input("Ano", 2024, 2030, datetime.now().year)
+        
         target_users = [st.session_state.usuario]
         titulo_dash = f"MEU DASHBOARD - {mes_sel.upper()}"
         status_filtro_radio = "Todos"
@@ -159,23 +157,24 @@ else:
                 df_base_filtros = df_base_filtros[df_base_filtros["Setor"] == st.session_state.setor_usuario]
             
             colaboradores_lista = sorted(df_base_filtros["Funcionário"].unique().tolist())
-            f_colabs = st.sidebar.multiselect("Filtrar Colaboradores:", colaboradores_lista, placeholder="Escolha uma opção")
-            status_filtro_radio = st.sidebar.radio("Filtrar por Status de Avaliação:", ["Todos", "✅ Avaliados", "⏳ Pendentes"])
+            f_colabs = st.sidebar.multiselect("Filtrar Colaboradores:", colaboradores_lista)
+            status_filtro_radio = st.sidebar.radio("Status de Avaliação:", ["Todos", "✅ Avaliados", "⏳ Pendentes"])
             
             if f_colabs:
                 target_users = f_colabs
-                titulo_dash = f"DASHBOARD: {f_colabs[0].upper()}" if len(f_colabs) == 1 else f"DASHBOARD GRUPAL"
+                titulo_dash = f"DASHBOARD: {f_colabs[0].upper()}" if len(f_colabs) == 1 else "DASHBOARD GRUPAL"
             else:
                 target_users = colaboradores_lista if not df_base_filtros.empty else [st.session_state.usuario]
 
-        # TRAVA CONTRA ERRO DE DATA VAZIA
         if df.empty or df["Data"].isnull().all():
-            st.info("Aguardando registros para exibir o Dashboard.")
+            st.info("Nenhum dado encontrado para o período.")
         else:
+            # Filtragem principal
             user_df = df[(df["Funcionário"].isin(target_users)) & 
                          (df["Data"].dt.month == (LISTA_MESES.index(mes_sel)+1)) & 
                          (df["Data"].dt.year == ano_sel)].copy()
             
+            # Filtro por avaliação do líder
             user_df["Nota_Lider_Str"] = user_df["Nota_Lider"].apply(lambda x: str(x).replace('.0', ''))
             if status_filtro_radio == "✅ Avaliados":
                 user_df = user_df[user_df["Nota_Lider_Str"].isin(LISTA_NOTAS_VALIDAS)]
@@ -185,7 +184,7 @@ else:
             horas_totais = user_df["Horas"].sum()
             meta_dinamica = 7.0 * (len(target_users) if target_users else 1)
 
-            # Lógica de cores dinâmica do script original
+            # Lógica de cores baseada na meta
             if horas_totais < (meta_dinamica * 0.4): cor_card, cor_graf = "linear-gradient(135deg, #ff0000 0%, #8b0000 100%)", "#ff4b4b"
             elif horas_totais < meta_dinamica: cor_card, cor_graf = "linear-gradient(135deg, #ff8c00 0%, #ff4500 100%)", "#ffa500"
             else: cor_card, cor_graf = "linear-gradient(135deg, #00ff00 0%, #006400 100%)", "#00ff00"
@@ -195,14 +194,15 @@ else:
             
             c1, c2, c3, c4 = st.columns(4)
             c1.metric("HORAS NO MÊS", format_to_time(horas_totais))
-            c2.metric("META DO GRUPO", format_to_time(meta_dinamica))
-            c3.metric("PROGRESSO", f"{min(100.0, (horas_totais/meta_dinamica)*100 if meta_dinamica > 0 else 0):.1f}%")
+            c2.metric("META TOTAL", format_to_time(meta_dinamica))
+            progresso = min(100.0, (horas_totais/meta_dinamica)*100 if meta_dinamica > 0 else 0)
+            c3.metric("PROGRESSO", f"{progresso:.1f}%")
             c4.metric("STATUS", "EM DIA" if horas_totais >= meta_dinamica else "PENDENTE")
 
-            # --- SEÇÃO DE META 7H (ORIGINAL) ---
+            # --- SEÇÃO GESTOR: META 7H INDIVIDUAL ---
             if any(p in st.session_state.perfil for p in ["Gestor", "Admin"]):
                 st.divider()
-                st.subheader("🚩 Status de Cumprimento da Meta (7h Individual)")
+                st.subheader("🚩 Status de Cumprimento (Meta 7h/Colaborador)")
                 udf_meta = carregar_usuarios()
                 if not ("Admin" in st.session_state.perfil or st.session_state.setor_usuario == "Diretoria"):
                     udf_meta = udf_meta[udf_meta["setor"] == st.session_state.setor_usuario]
@@ -218,30 +218,29 @@ else:
                 m1, m2 = st.columns([1, 2])
                 with m1:
                     fig_meta = px.pie(values=[len(bateu_meta), len(pendente_meta)], 
-                                      names=['Concluiu Meta', 'Pendente'], 
-                                      hole=0.6, color=['Concluiu Meta', 'Pendente'],
-                                      color_discrete_map={'Concluiu Meta':'#00ff00', 'Pendente':'#ff4b4b'},
-                                      title="Proporção da Equipe")
-                    fig_meta.update_layout(showlegend=False, height=250, margin=dict(t=40, b=0, l=0, r=0), template="plotly_dark")
+                                      names=['Bateu Meta', 'Pendente'], 
+                                      hole=0.6, color=['Bateu Meta', 'Pendente'],
+                                      color_discrete_map={'Bateu Meta':'#00ff00', 'Pendente':'#ff4b4b'},
+                                      title="Panorama da Equipe")
+                    fig_meta.update_layout(showlegend=False, height=220, margin=dict(t=30, b=0, l=0, r=0), template="plotly_dark")
                     st.plotly_chart(fig_meta, use_container_width=True)
                 
                 with m2:
-                    col_lista1, col_lista2 = st.columns(2)
-                    with col_lista1:
-                        with st.expander(f"✅ CONCLUÍRAM ({len(bateu_meta)})", expanded=False):
-                            for _, row in bateu_meta.iterrows():
-                                st.write(f"✔️ {row['Nome']} ({format_to_time(row['Total_Horas'])})")
-                    with col_lista2:
+                    cl1, cl2 = st.columns(2)
+                    with cl1:
+                        with st.expander(f"✅ CONCLUÍRAM ({len(bateu_meta)})"):
+                            for _, r in bateu_meta.iterrows(): st.write(f"✔️ {r['Nome']}")
+                    with cl2:
                         with st.expander(f"⏳ PENDENTES ({len(pendente_meta)})", expanded=True):
-                            for _, row in pendente_meta.iterrows():
-                                falta = 7.0 - row['Total_Horas']
-                                st.write(f"❌ {row['Nome']} - {format_to_time(row['Total_Horas'])} (Faltam {format_to_time(falta)})")
+                            for _, r in pendente_meta.iterrows():
+                                falta = 7.0 - r['Total_Horas']
+                                st.write(f"❌ {r['Nome']} (-{format_to_time(falta)})")
 
-            # --- GRÁFICO E EDIÇÃO ---
+            # --- GRÁFICOS E EDIÇÃO ---
             st.divider()
             cg1, cg2 = st.columns([1.5, 1])
             with cg1:
-                st.subheader("Capacitação por Tema")
+                st.subheader("Distribuição por Temas")
                 if not user_df.empty:
                     cor_param = "Funcionário" if len(target_users) > 1 else None
                     fig = px.bar(user_df, x="Tema", y="Horas", color=cor_param, template="plotly_dark", 
@@ -250,197 +249,179 @@ else:
                     st.plotly_chart(fig, use_container_width=True)
             
             with cg2:
-                st.subheader("Ajustar Treinamento")
+                st.subheader("Ajustar Registro")
                 if not user_df.empty:
-                    sel_id = st.selectbox("Selecionar Registro:", user_df.index, format_func=lambda x: f"[{user_df.loc[x, 'Funcionário']}] {user_df.loc[x, 'Tema']}")
-                    col_btn1, col_btn2 = st.columns(2)
-                    funcionario_do_registro = user_df.loc[sel_id, 'Funcionário']
-                    sou_admin = "Admin" in st.session_state.perfil
-                    sou_diretoria = st.session_state.setor_usuario == "Diretoria"
-                    sou_gestor = "Gestor" in st.session_state.perfil
-                    eh_meu_proprio_registro = (funcionario_do_registro == st.session_state.usuario)
-                    pode_gerir_total = eh_meu_proprio_registro or sou_admin
-                    pode_editar = pode_gerir_total or sou_gestor or sou_diretoria
+                    sel_id = st.selectbox("Escolha o registro:", user_df.index, format_func=lambda x: f"[{user_df.loc[x, 'Funcionário']}] {user_df.loc[x, 'Tema']}")
                     
-                    if col_btn1.button("❌ EXCLUIR", disabled=not pode_gerir_total):
+                    # Permissões de edição
+                    func_reg = user_df.loc[sel_id, 'Funcionário']
+                    sou_adm = "Admin" in st.session_state.perfil
+                    sou_gestor = "Gestor" in st.session_state.perfil
+                    eh_meu = (func_reg == st.session_state.usuario)
+                    
+                    pode_excluir = eh_meu or sou_adm
+                    pode_editar = eh_meu or sou_adm or sou_gestor
+
+                    col_b1, col_b2 = st.columns(2)
+                    if col_b1.button("❌ EXCLUIR", disabled=not pode_excluir, use_container_width=True):
                         df_exc = carregar_dados()
                         df_exc = df_exc.drop(sel_id)
-                        salvar_dados(df_exc)
-                        st.rerun()
-                    if col_btn2.button("📝 EDITAR", disabled=not pode_editar):
-                        st.session_state.editando_id = sel_id
+                        salvar_dados(df_exc); st.rerun()
                     
+                    if col_b2.button("📝 EDITAR", disabled=not pode_editar, use_container_width=True):
+                        st.session_state.editando_id = sel_id
+
                     if 'editando_id' in st.session_state and st.session_state.editando_id == sel_id:
-                        with st.container():
-                            st.markdown('<div class="edit-container">', unsafe_allow_html=True)
-                            with st.form("form_ed_multi"):
-                                st.write(f"Editando: **{funcionario_do_registro}**")
-                                trava_campos_origem = not pode_gerir_total
-                                novo_tema = st.text_input("Tema", value=user_df.loc[sel_id, 'Tema'], disabled=trava_campos_origem)
-                                n_c_raw = str(user_df.loc[sel_id, 'Avaliação']).replace('.0', '')
-                                idx_c = LISTA_NOTAS_CADASTRO.index(n_c_raw) if n_c_raw in LISTA_NOTAS_CADASTRO else 0
-                                nova_nota_colab = st.selectbox("Satisfação Colab.", LISTA_NOTAS_CADASTRO, index=idx_c, disabled=trava_campos_origem)
-                                
-                                pode_avaliar_lider = (sou_gestor or sou_diretoria or sou_admin) and not eh_meu_proprio_registro
-                                n_l_raw = str(user_df.loc[sel_id, 'Nota_Lider']).replace('.0', '')
-                                idx_l = LISTA_NOTAS_CADASTRO.index(n_l_raw) if n_l_raw in LISTA_NOTAS_CADASTRO else 0
-                                
-                                if sou_gestor or sou_diretoria or sou_admin:
-                                    nova_nota_lider = st.selectbox("Avaliação Líder (Privada)", LISTA_NOTAS_CADASTRO, index=idx_l, disabled=not pode_avaliar_lider)
-                                else: nova_nota_lider = n_l_raw
+                        st.markdown('<div class="edit-container">', unsafe_allow_html=True)
+                        with st.form("form_edicao"):
+                            trava_colab = not (eh_meu or sou_adm)
+                            novo_tema = st.text_input("Tema", value=user_df.loc[sel_id, 'Tema'], disabled=trava_colab)
+                            
+                            n_c_raw = str(user_df.loc[sel_id, 'Avaliação']).replace('.0', '')
+                            idx_c = LISTA_NOTAS_CADASTRO.index(n_c_raw) if n_c_raw in LISTA_NOTAS_CADASTRO else 0
+                            nova_nota_c = st.selectbox("Sua Satisfação", LISTA_NOTAS_CADASTRO, index=idx_c, disabled=trava_colab)
+                            
+                            # Avaliação do Líder (Apenas Gestores avaliam o registro de outros)
+                            pode_dar_nota_lider = (sou_gestor or sou_adm) and not eh_meu
+                            n_l_raw = str(user_df.loc[sel_id, 'Nota_Lider']).replace('.0', '')
+                            idx_l = LISTA_NOTAS_CADASTRO.index(n_l_raw) if n_l_raw in LISTA_NOTAS_CADASTRO else 0
+                            nova_nota_l = st.selectbox("Avaliação Líder (Privada)", LISTA_NOTAS_CADASTRO, index=idx_l, disabled=not pode_dar_nota_lider)
 
-                                h_dec = user_df.loc[sel_id, 'Horas']; h_ed, m_total = int(h_dec), (h_dec - int(h_dec)) * 60
-                                m_ed, s_ed = int(m_total), int(round((m_total - int(m_total)) * 60))
-                                c_h, c_m, c_s = st.columns(3)
-                                nh = c_h.number_input("Hora", 0, 23, h_ed, disabled=trava_campos_origem)
-                                nm = c_m.number_input("Minuto", 0, 59, m_ed, disabled=trava_campos_origem)
-                                ns = c_s.number_input("Segundo", 0, 59, s_ed, disabled=trava_campos_origem)
+                            h_dec = user_df.loc[sel_id, 'Horas']
+                            h_ed, m_total = int(h_dec), (h_dec - int(h_dec)) * 60
+                            m_ed, s_ed = int(m_total), int(round((m_total - int(m_total)) * 60))
+                            
+                            ec1, ec2, ec3 = st.columns(3)
+                            nh = ec1.number_input("H", 0, 23, h_ed, disabled=trava_colab)
+                            nm = ec2.number_input("M", 0, 59, m_ed, disabled=trava_colab)
+                            ns = ec3.number_input("S", 0, 59, s_ed, disabled=trava_colab)
 
-                                if st.form_submit_button("SALVAR"):
-                                    df_b = carregar_dados()
-                                    total_h_nova = nh + (nm/60) + (ns/3600)
-                                    df_b.loc[sel_id, ["Tema", "Horas", "Avaliação", "Nota_Lider"]] = [novo_tema, total_h_nova, nova_nota_colab, nova_nota_lider]
-                                    salvar_dados(df_b)
-                                    del st.session_state.editando_id; st.rerun()
-                            if st.button("Cancelar"): del st.session_state.editando_id; st.rerun()
-                            st.markdown('</div>', unsafe_allow_html=True)
+                            if st.form_submit_button("SALVAR"):
+                                df_b = carregar_dados()
+                                df_b.loc[sel_id, ["Tema", "Horas", "Avaliação", "Nota_Lider"]] = [novo_tema, nh + (nm/60) + (ns/3600), nova_nota_c, nova_nota_l]
+                                salvar_dados(df_b)
+                                del st.session_state.editando_id; st.rerun()
+                        if st.button("Fechar"): del st.session_state.editando_id; st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
 
             # --- HISTÓRICO ---
-            st.divider(); st.subheader("📋 Histórico Detalhado")
+            st.divider(); st.subheader("📋 Detalhamento dos Registros")
             if not user_df.empty:
                 disp = user_df.copy()
-                def mascarar_nota_privada(row):
-                    if row['Funcionário'] == st.session_state.usuario and "Admin" not in st.session_state.perfil: return "Nota Indisponível"
+                def mask_nota(row):
+                    if row['Funcionário'] == st.session_state.usuario and not sou_adm: return "🔒 Privada"
                     return row['Nota_Lider']
-                disp["Nota_Lider"] = disp.apply(mascarar_nota_privada, axis=1)
+                disp["Nota_Lider"] = disp.apply(mask_nota, axis=1)
                 disp["Horas"] = disp["Horas"].apply(format_to_time)
                 disp["Data"] = disp["Data"].dt.strftime('%d/%m/%Y')
-                disp = disp.rename(columns={"Avaliação": "Satisfação Colab.", "Nota_Lider": "Avaliação Líder (Privada)"})
-                cols_exibir = ["Data", "Funcionário", "Tema", "Horas", "Líder", "Satisfação Colab."]
-                if any(p in st.session_state.perfil for p in ["Gestor", "Admin"]) or st.session_state.setor_usuario == "Diretoria": cols_exibir.append("Avaliação Líder (Privada)")
-                st.dataframe(disp[cols_exibir], use_container_width=True)
+                st.dataframe(disp[["Data", "Funcionário", "Tema", "Horas", "Líder", "Avaliação", "Nota_Lider"]], use_container_width=True)
 
-    # --- LÓGICA REGISTRO ---
+    # --- REGISTRO DE CURSO ---
     elif menu == "Registrar Curso":
         st.markdown('<h1 class="main-title-logged">NOVO REGISTRO</h1>', unsafe_allow_html=True)
         with st.form("form_reg"):
-            tema = st.text_input("Tema do Treinamento"); data = st.date_input("Data", format="DD/MM/YYYY")
+            tema = st.text_input("Nome do Treinamento")
+            data = st.date_input("Data Realizada", format="DD/MM/YYYY")
             c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
-            h, m, s = c1.number_input("Hora", 0, 23), c2.number_input("Minuto", 0, 59), c3.number_input("Segundo", 0, 59)
-            nota_reg = c4.selectbox("Satisfação (1 a 10)", LISTA_NOTAS_CADASTRO, index=0); lider = st.selectbox("Líder Responsável", LISTA_LIDERES)
-            if st.form_submit_button("SALVAR"):
-                if not tema or lider == LISTA_LIDERES[0] or nota_reg == "Selecione...": st.error("Preencha tudo.")
+            h, m, s = c1.number_input("H", 0, 23), c2.number_input("M", 0, 59), c3.number_input("S", 0, 59)
+            nota = c4.selectbox("Sua Satisfação (1 a 10)", LISTA_NOTAS_CADASTRO)
+            lider = st.selectbox("Líder Responsável", LISTA_LIDERES)
+            if st.form_submit_button("CONFIRMAR REGISTRO"):
+                if not tema or lider == LISTA_LIDERES[0] or nota == "Selecione...":
+                    st.error("Preencha todos os campos obrigatórios.")
                 else:
                     total = h + (m/60) + (s/3600)
-                    nova = pd.DataFrame([{"Data": data.strftime("%d/%m/%Y"), "Funcionário": st.session_state.usuario, "Setor": st.session_state.setor_usuario, "Líder": lider, "Tema": tema, "Horas": total, "Avaliação": nota_reg, "Nota_Lider": "-"}])
+                    nova = pd.DataFrame([{"Data": data.strftime("%d/%m/%Y"), "Funcionário": st.session_state.usuario, "Setor": st.session_state.setor_usuario, "Líder": lider, "Tema": tema, "Horas": total, "Avaliação": nota, "Nota_Lider": "-"}])
                     df_full = pd.concat([carregar_dados(), nova], ignore_index=True)
                     salvar_dados(df_full)
-                    st.success("Registrado!"); st.rerun()
+                    st.success("Treinamento registrado com sucesso!"); st.rerun()
 
-    # --- LÓGICA RELATÓRIO ---
+    # --- RELATÓRIOS ---
     elif menu == "Relatório Geral":
-        st.markdown('<h1 class="main-title-logged">RELATÓRIO DE DESEMPENHO</h1>', unsafe_allow_html=True)
-        df_atual = carregar_dados()
-        
-        if not df_atual.empty and not df_atual["Data"].isnull().all():
-            st.subheader("📈 Evolução Mensal da Equipe (Últimos 6 Meses)")
-            df_hist = df_atual.copy()
-            df_hist = df_hist.set_index('Data').resample('M')['Horas'].sum().reset_index()
-            df_hist = df_hist.tail(6)
-            fig_evolucao = px.line(df_hist, x='Data', y='Horas', markers=True, template="plotly_dark", color_discrete_sequence=["#ff4b4b"])
-            st.plotly_chart(fig_evolucao, use_container_width=True)
-            st.divider()
-
-            # Filtros de Relatório
+        st.markdown('<h1 class="main-title-logged">RELATÓRIOS E DESEMPENHO</h1>', unsafe_allow_html=True)
+        df_rel = carregar_dados()
+        if not df_rel.empty:
+            # Filtros de Relatório por Perfil
             if "Admin" in st.session_state.perfil or st.session_state.setor_usuario == "Diretoria":
-                col_f1, col_f2, col_f3 = st.columns(3); f_setor = col_f1.selectbox("Filtrar Setor", ["Todos"] + LISTA_SETORES[1:]); df_rel = df_atual.copy()
-                if f_setor != "Todos": df_rel = df_rel[df_rel["Setor"] == f_setor]
-                lista_colabs = ["Todos"] + sorted(df_rel["Funcionário"].unique().tolist()); f_colab = col_f2.selectbox("Filtrar Colaborador", lista_colabs)
-                if f_colab != "Todos": df_rel = df_rel[df_rel["Funcionário"] == f_colab]
-                f_mes = col_f3.selectbox("Filtrar Mês", ["Todos"] + LISTA_MESES)
+                cf1, cf2, cf3 = st.columns(3)
+                f_s = cf1.selectbox("Setor", ["Todos"] + LISTA_SETORES[1:])
+                if f_s != "Todos": df_rel = df_rel[df_rel["Setor"] == f_s]
+                f_c = cf2.selectbox("Colaborador", ["Todos"] + sorted(df_rel["Funcionário"].unique().tolist()))
+                if f_c != "Todos": df_rel = df_rel[df_rel["Funcionário"] == f_c]
+                f_m = cf3.selectbox("Mês", ["Todos"] + LISTA_MESES)
             elif "Gestor" in st.session_state.perfil:
-                col_f1, col_f2, col_f3 = st.columns(3); f_setor = st.session_state.setor_usuario; col_f1.info(f"Setor: {f_setor}"); df_rel = df_atual[df_atual["Setor"] == f_setor].copy()
-                lista_colabs = ["Todos"] + sorted(df_rel["Funcionário"].unique().tolist()); f_colab = col_f2.selectbox("Filtrar Colaborador", lista_colabs)
-                if f_colab != "Todos": df_rel = df_rel[df_rel["Funcionário"] == f_colab]
-                f_mes = col_f3.selectbox("Filtrar Mês", ["Todos"] + LISTA_MESES)
+                cf1, cf2 = st.columns(2)
+                df_rel = df_rel[df_rel["Setor"] == st.session_state.setor_usuario]
+                f_c = cf1.selectbox("Colaborador", ["Todos"] + sorted(df_rel["Funcionário"].unique().tolist()))
+                if f_c != "Todos": df_rel = df_rel[df_rel["Funcionário"] == f_c]
+                f_m = cf2.selectbox("Mês", ["Todos"] + LISTA_MESES)
             else:
-                col_f1, col_f3 = st.columns([1, 2]); df_rel = df_atual[df_atual["Funcionário"] == st.session_state.usuario].copy(); col_f1.info(f"Usuário: {st.session_state.usuario}"); f_mes = col_f3.selectbox("Filtrar Mês", ["Todos"] + LISTA_MESES)
+                df_rel = df_rel[df_rel["Funcionário"] == st.session_state.usuario]
+                f_m = st.selectbox("Filtrar Mês", ["Todos"] + LISTA_MESES)
 
-            if f_mes != "Todos": df_rel = df_rel[df_rel["Data"].dt.month == LISTA_MESES.index(f_mes)+1]
-            
-            # Exportação Excel
-            if not df_rel.empty:
-                towrite = io.BytesIO()
-                df_export = df_rel.copy()
-                df_export['Data'] = df_export['Data'].dt.strftime('%d/%m/%Y')
-                df_export.to_excel(towrite, index=False, engine='openpyxl')
-                st.download_button(label="📥 Baixar Relatório Atual (Excel)", data=towrite.getvalue(), file_name=f"Relatorio_Barbosa_{datetime.now().strftime('%Y%m%d')}.xlsx", mime="application/vnd.ms-excel")
+            if f_m != "Todos": df_rel = df_rel[df_rel["Data"].dt.month == LISTA_MESES.index(f_m)+1]
 
-                # Cards de Conquistas ou Ranking
-                if any(p in st.session_state.perfil for p in ["Gestor", "Admin"]) or st.session_state.setor_usuario == "Diretoria":
-                    st.subheader("🏆 Ranking de Notas (Líder)")
-                    df_ranking = df_rel.copy()
-                    df_ranking["Nota_Lider_Num"] = pd.to_numeric(df_ranking["Nota_Lider"], errors='coerce')
-                    df_ranking = df_ranking.dropna(subset=['Nota_Lider_Num'])
-                    if not df_ranking.empty:
-                        ranking = df_ranking.groupby("Funcionário")["Nota_Lider_Num"].mean().reset_index().sort_values(by="Nota_Lider_Num", ascending=False).reset_index(drop=True)
-                        ranking.index += 1; ranking["Média Final"] = ranking["Nota_Lider_Num"].map("{:.1f} ⭐".format)
-                        st.table(ranking[["Funcionário", "Média Final"]])
-                else:
-                    st.subheader(f"🌟 Minhas Conquistas")
-                    total_t, total_h = len(df_rel), format_to_time(df_rel["Horas"].sum()); tema_destaque = df_rel["Tema"].mode()[0] if not df_rel.empty else "-"
-                    c1, c2, c3 = st.columns(3)
-                    with c1: st.markdown(f'<div class="metric-card" style="border-bottom: 4px solid #007BFF;"><div class="metric-label">Treinos</div><div class="metric-value">{total_t}</div></div>', unsafe_allow_html=True)
-                    with c2: st.markdown(f'<div class="metric-card" style="border-bottom: 4px solid #28A745;"><div class="metric-label">Horas</div><div class="metric-value">{total_h}</div></div>', unsafe_allow_html=True)
-                    with c3: st.markdown(f'<div class="metric-card" style="border-bottom: 4px solid #6F42C1;"><div class="metric-label">Especialidade</div><div class="metric-value" style="font-size: 18px;">{tema_destaque}</div></div>', unsafe_allow_html=True)
+            # Cards de Resumo
+            st.divider()
+            r1, r2, r3 = st.columns(3)
+            with r1: st.markdown(f'<div class="metric-card"><div class="metric-label">Total Cursos</div><div class="metric-value">{len(df_rel)}</div></div>', unsafe_allow_html=True)
+            with r2: st.markdown(f'<div class="metric-card"><div class="metric-label">Carga Horária</div><div class="metric-value">{format_to_time(df_rel["Horas"].sum())}</div></div>', unsafe_allow_html=True)
+            with r3: 
+                media_n = pd.to_numeric(df_rel["Nota_Lider"], errors='coerce').mean()
+                st.markdown(f'<div class="metric-card"><div class="metric-label">Média Avaliação</div><div class="metric-value">{f"{media_n:.1f} ⭐" if not pd.isna(media_n) else "-"}</div></div>', unsafe_allow_html=True)
 
-    # --- PAINEL ADMINISTRATIVO ---
+            # Exportação
+            towrite = io.BytesIO()
+            df_export = df_rel.copy()
+            df_export['Data'] = df_export['Data'].dt.strftime('%d/%m/%Y')
+            df_export.to_excel(towrite, index=False, engine='openpyxl')
+            st.download_button("📥 BAIXAR EXCEL", towrite.getvalue(), f"Relatorio_Barbosa_{datetime.now().year}.xlsx", "application/vnd.ms-excel")
+
+    # --- ADMINISTRAÇÃO ---
     elif menu == "Painel Administrativo":
-        st.markdown('<h1 class="main-title-logged">PAINEL ADMINISTRATIVO</h1>', unsafe_allow_html=True)
+        st.markdown('<h1 class="main-title-logged">ADMINISTRAÇÃO DE SISTEMA</h1>', unsafe_allow_html=True)
         udf = carregar_usuarios()
         
         # Alertas de Inatividade
-        st.subheader("⚠️ Atenção Crítica (Inativos > 15 dias)")
+        st.subheader("⚠️ Alertas de Inatividade (> 15 dias)")
         df_inat = carregar_dados()
-        if not df_inat.empty and not df_inat["Data"].isnull().all():
+        if not df_inat.empty:
             hoje = datetime.now()
-            ultimos_registros = df_inat.groupby("Funcionário")["Data"].max().reset_index()
+            ult_reg = df_inat.groupby("Funcionário")["Data"].max().reset_index()
             alertas = []
-            for _, u_row in udf.iterrows():
-                nome_u = u_row['usuario']
-                reg = ultimos_registros[ultimos_registros["Funcionário"] == nome_u]
-                if reg.empty: alertas.append(f"🔴 {nome_u}: Sem registros.")
+            for _, u in udf.iterrows():
+                reg = ult_reg[ult_reg["Funcionário"] == u['usuario']]
+                if reg.empty: alertas.append(f"🔴 {u['usuario']}: Nunca registrou treinamento.")
                 else:
                     dias = (hoje - reg.iloc[0]['Data']).days
-                    if dias > 15: alertas.append(f"🟠 {nome_u}: Inativo há {dias} dias.")
+                    if dias > 15: alertas.append(f"🟠 {u['usuario']}: Inativo há {dias} dias.")
+            
             if alertas:
                 for a in alertas: st.markdown(f'<div class="inactive-alert">{a}</div>', unsafe_allow_html=True)
-            else: st.success("Equipe engajada!")
+            else: st.success("Todos os colaboradores estão ativos!")
 
-        # Gestão de Usuários
-        t1, t2, t3 = st.tabs(["📋 Lista", "➕ Novo", "🛠️ Editar"])
-        with t1:
-            st.dataframe(udf, use_container_width=True)
+        t1, t2, t3 = st.tabs(["Lista de Usuários", "Criar Novo", "Editar Perfil"])
+        with t1: st.dataframe(udf, use_container_width=True)
         with t2:
-            with st.form("form_nu", clear_on_submit=True):
-                c_u, c_s = st.columns(2); nu, ns = c_u.text_input("Nome"), c_s.text_input("Senha", type="password")
-                c_set, c_perf = st.columns(2); nset = c_set.selectbox("Setor", LISTA_SETORES[1:])
-                np = c_perf.multiselect("Perfil", ["Comum", "Gestor", "Editor", "Admin"], default=["Comum"])
-                if st.form_submit_button("CRIAR"):
+            with st.form("new_user"):
+                nu, ns = st.text_input("Nome Completo"), st.text_input("Senha", type="password")
+                nset = st.selectbox("Setor", LISTA_SETORES[1:])
+                np = st.multiselect("Perfis", ["Comum", "Gestor", "Editor", "Admin"], default=["Comum"])
+                if st.form_submit_button("CADASTRAR"):
                     if nu and ns:
                         new_u = pd.DataFrame([{"usuario": nu, "senha": ns, "perfil": str(np), "setor": nset}])
                         salvar_usuarios(pd.concat([udf, new_u], ignore_index=True))
-                        st.success("Criado!"); st.rerun()
+                        st.success("Usuário cadastrado!"); st.rerun()
         with t3:
-            u_sel = st.selectbox("Escolha para editar:", udf['usuario'].tolist())
+            u_sel = st.selectbox("Selecionar Usuário", udf['usuario'].tolist())
             d = udf[udf['usuario'] == u_sel].iloc[0]
-            with st.form("form_ed_adm"):
+            with st.form("edit_user"):
                 es = st.text_input("Senha", value=str(d['senha']))
                 eset = st.selectbox("Setor", LISTA_SETORES[1:], index=LISTA_SETORES[1:].index(d['setor']) if d['setor'] in LISTA_SETORES else 0)
-                ep = st.multiselect("Perfil", ["Comum", "Gestor", "Editor", "Admin"], default=converter_perfil(d['perfil']))
+                ep = st.multiselect("Perfis", ["Comum", "Gestor", "Editor", "Admin"], default=converter_perfil(d['perfil']))
                 if st.form_submit_button("ATUALIZAR"):
                     udf.loc[udf['usuario'] == u_sel, ["senha", "perfil", "setor"]] = [es, str(ep), eset]
-                    salvar_usuarios(udf); st.success("OK!"); st.rerun()
+                    salvar_usuarios(udf); st.success("Dados atualizados!"); st.rerun()
 
     if st.sidebar.button("SAIR"):
         st.session_state.autenticado = False
